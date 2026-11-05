@@ -31,8 +31,11 @@ As versões novas instalam por cima e mantêm os logins (o APK sempre sai com a 
 
 - Precisa do **Android System WebView / Chrome atualizado** (perfis separados). Se for antigo, o app avisa
   e só deixa 1 conta.
-- O login com **Google** pode ser bloqueado pelo próprio Google dentro de apps (política deles para WebView).
-  Use **conta local** ou **Discord**.
+- **Login com Google**: o Google não aceita login dentro de apps, então ao tocar em "Continuar com Google"
+  o MultiIdle abre o login no **navegador do celular** e a volta é entregue à mesma conta do app.
+  Para isso funcionar, permita uma vez: Configurações → Apps → MultiIdle → **Abrir por padrão** →
+  Adicionar link → marque **pokeidle.io** (o app mostra esse atalho na primeira vez).
+  Efeito colateral: links `pokeidle.io/app` clicados em outros apps passam a abrir no MultiIdle.
 - O jogo conta quantas contas entram do mesmo aparelho (`id-dispositivo`). O app faz todas as contas
   usarem o **mesmo** id, para o jogo ver corretamente que são do mesmo celular, como manda o limite.
 - Para rodar a noite toda, deixe o MultiIdle **sem otimização de bateria**

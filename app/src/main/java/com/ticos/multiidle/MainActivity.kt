@@ -16,6 +16,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Message
+import android.provider.Settings
+import android.content.pm.verify.domain.DomainVerificationManager
+import android.content.pm.verify.domain.DomainVerificationUserState
+import androidx.browser.customtabs.CustomTabsIntent
 import android.text.TextUtils
 import android.util.TypedValue
 import android.view.Gravity
@@ -82,11 +86,13 @@ class MainActivity : Activity() {
 
         if (!multiPerfil) avisarSemPerfis()
         if (intent?.getBooleanExtra(EXTRA_SAIR, false) == true) encerrar()
+        else intent?.let { receberVoltaDoLogin(it) }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.getBooleanExtra(EXTRA_SAIR, false)) encerrar()
+        else receberVoltaDoLogin(intent)
     }
 
     // De propósito NÃO chamamos webView.onPause()/pauseTimers() em onPause: o jogo tem que
@@ -259,6 +265,7 @@ class MainActivity : Activity() {
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 val url = request.url
+                if (ehIdaAoGoogle(url)) { loginNoNavegador(i, url); return true }
                 return if (url.scheme == "http" || url.scheme == "https") false
                 else { abrirFora(url); true }
             }
@@ -336,6 +343,88 @@ class MainActivity : Activity() {
         val js = "try{if(localStorage.getItem('id-dispositivo')!=='$id')" +
             "localStorage.setItem('id-dispositivo','$id')}catch(e){}"
         WebViewCompat.addDocumentStartJavaScript(web, js, setOf(ORIGEM_JOGO))
+    }
+
+    // ------------------------------------------------------------------ login com Google
+    //
+    // O Google não aceita login dentro de WebView. Então o login vai para o NAVEGADOR do
+    // celular (uma "Custom Tab", o jeito que o próprio Google recomenda para apps), e a volta
+    // dele (https://pokeidle.io/app?sessao=…&ida=…) é entregue de volta a este app, que a
+    // carrega na MESMA conta que começou o login. O `ida` foi sorteado e guardado pela página
+    // daquela conta antes de sair, então o jogo aceita a sessão normalmente.
+    //
+    // Para o Android entregar essa volta ao app, o usuário precisa permitir uma vez:
+    // Configurações > Apps > MultiIdle > Abrir por padrão > pokeidle.io.
+
+    private fun ehIdaAoGoogle(url: Uri) =
+        url.host == HOST_JOGO && (url.path ?: "").let { it == "/auth/google" || it == "/auth/google/" }
+
+    private fun loginNoNavegador(i: Int, url: Uri) {
+        prefs.edit().putInt(P_LOGIN_SLOT, i).putLong(P_LOGIN_EM, System.currentTimeMillis()).apply()
+        if (linksLiberados()) { abrirCustomTab(url); return }
+        AlertDialog.Builder(this)
+            .setTitle("Falta uma permissão (só 1 vez)")
+            .setMessage(
+                "O login com Google acontece no navegador e depois volta para o MultiIdle.\n\n" +
+                    "Para a volta funcionar, permita que o MultiIdle abra links do pokeidle.io:\n" +
+                    "toque em \"Abrir configurações\" → \"Adicionar link\" (ou \"Links compatíveis\") → marque pokeidle.io.\n\n" +
+                    "Depois volte aqui e toque no botão do Google de novo."
+            )
+            .setPositiveButton("Abrir configurações") { _, _ -> abrirConfigLinks() }
+            .setNeutralButton("Tentar assim mesmo") { _, _ -> abrirCustomTab(url) }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
+    private fun linksLiberados(): Boolean {
+        if (Build.VERSION.SDK_INT < 31) return true // antes do Android 12 o sistema pergunta na hora
+        return try {
+            val dvm = getSystemService(DomainVerificationManager::class.java)
+            val estado = dvm.getDomainVerificationUserState(packageName)?.hostToStateMap?.get(HOST_JOGO)
+            estado == DomainVerificationUserState.DOMAIN_STATE_SELECTED ||
+                estado == DomainVerificationUserState.DOMAIN_STATE_VERIFIED
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun abrirConfigLinks() {
+        val pacote = Uri.parse("package:$packageName")
+        try {
+            if (Build.VERSION.SDK_INT >= 31) {
+                startActivity(Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, pacote))
+                return
+            }
+        } catch (_: Exception) {
+        }
+        startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pacote))
+    }
+
+    private fun abrirCustomTab(url: Uri) {
+        try {
+            CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this, url)
+        } catch (_: ActivityNotFoundException) {
+            Toast.makeText(this, "Nenhum navegador encontrado", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    /** A volta do login (pokeidle.io/app?sessao=…) chegou: carrega na conta que pediu. */
+    private fun receberVoltaDoLogin(intent: Intent) {
+        val url = intent.data ?: return
+        if (intent.action != Intent.ACTION_VIEW || url.host != HOST_JOGO) return
+        if (url.getQueryParameter("sessao") == null) return
+        val pedido = prefs.getInt(P_LOGIN_SLOT, -1)
+        val recente = System.currentTimeMillis() - prefs.getLong(P_LOGIN_EM, 0) < 15 * 60_000
+        val slot = when {
+            recente && pedido in 0 until painel.quantidade -> pedido
+            painel.foco >= 0 -> painel.foco
+            else -> 0
+        }
+        prefs.edit().remove(P_LOGIN_SLOT).remove(P_LOGIN_EM).apply()
+        (painel.webs[slot] as? WebView)?.loadUrl(url.toString())
+        if (painel.quantidade > 1) focar(slot)
+        // Não deixa a sessão parada no intent (ela é o login da conta).
+        setIntent(Intent(this, MainActivity::class.java))
     }
 
     private fun abrirFora(url: Uri) {
@@ -506,6 +595,9 @@ class MainActivity : Activity() {
         private const val P_TELA_ACESA = "telaAcesa"
         private const val P_SEGUNDO_PLANO = "segundoPlano"
         private const val P_ID_DISPOSITIVO = "idDispositivo"
+        private const val P_LOGIN_SLOT = "loginSlot"
+        private const val P_LOGIN_EM = "loginEm"
+        private const val HOST_JOGO = "pokeidle.io"
 
         private const val COR_FUNDO = 0xFF121A24.toInt()
         private const val COR_BARRA = 0xFF1E2A3A.toInt()
