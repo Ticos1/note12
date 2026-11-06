@@ -31,6 +31,10 @@ import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
+import android.webkit.JavascriptInterface
+import android.widget.CheckBox
+import android.widget.Switch
+import org.json.JSONObject
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.net.ConnectivityManager
@@ -281,6 +285,7 @@ class MainActivity : Activity() {
     private fun criarConta(i: Int) {
         val web = novaWebView(i)
         compartilharIdDispositivo(web)
+        ligarAutoCompra(web, i)
 
         web.webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -500,6 +505,114 @@ class MainActivity : Activity() {
      * criaria um id diferente — e o jogo acharia que são celulares diferentes. Para ficar
      * honesto com o limite de contas por pessoa, todas as contas usam o MESMO id: o do app.
      */
+    // ------------------------------------------------------------------ compra automática
+    //
+    // O script (assets/autocompra.js) roda na página de cada conta e compra Ultra Ball / Ultra
+    // Potion quando ficam abaixo do mínimo. A configuração é uma só para todas as contas e é
+    // lida pelo script a cada 5 s, então mudar no menu vale na hora, sem recarregar.
+
+    private val scriptAutoCompra by lazy { assets.open("autocompra.js").bufferedReader().use { it.readText() } }
+
+    private fun ligarAutoCompra(web: WebView, i: Int) {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
+        web.addJavascriptInterface(PonteAutoCompra(i), "MultiIdleApp")
+        WebViewCompat.addDocumentStartJavaScript(web, scriptAutoCompra, setOf(ORIGEM_JOGO))
+    }
+
+    private fun configAutoCompra(): String = JSONObject().apply {
+        put("ligado", prefs.getBoolean(P_AC_LIGADO, false))
+        put("reservaOuro", prefs.getLong(P_AC_RESERVA, 0))
+        if (prefs.getBoolean(P_AC_BALL, true)) put("ball", JSONObject().apply {
+            put("min", prefs.getInt(P_AC_BALL_MIN, 100)); put("lote", prefs.getInt(P_AC_BALL_LOTE, 300))
+        })
+        if (prefs.getBoolean(P_AC_POT, true)) put("pot", JSONObject().apply {
+            put("min", prefs.getInt(P_AC_POT_MIN, 50)); put("lote", prefs.getInt(P_AC_POT_LOTE, 100))
+        })
+    }.toString()
+
+    private inner class PonteAutoCompra(private val conta: Int) {
+        @JavascriptInterface
+        fun config(): String = configAutoCompra()
+
+        @JavascriptInterface
+        fun comprou(item: String, qtd: Int) {
+            val hora = java.text.SimpleDateFormat("dd/MM HH:mm", java.util.Locale("pt", "BR")).format(java.util.Date())
+            val linha = "$hora · ${nomeConta(conta)}: $qtd× ${item.take(20)}"
+            synchronized(prefs) {
+                val antes = prefs.getString(P_AC_HISTORICO, "")!!.lines().filter { it.isNotBlank() }
+                prefs.edit().putString(P_AC_HISTORICO, (listOf(linha) + antes).take(8).joinToString("\n")).apply()
+            }
+        }
+    }
+
+    private fun abrirAutoCompra() {
+        val caixa = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((20 * dp).toInt(), (8 * dp).toInt(), (20 * dp).toInt(), 0)
+        }
+        fun texto(t: String, tamanho: Float = 14f, cor: Int? = null) = TextView(this).apply {
+            text = t; setTextSize(TypedValue.COMPLEX_UNIT_SP, tamanho); cor?.let { setTextColor(it) }
+            setPadding(0, (6 * dp).toInt(), 0, 0)
+            caixa.addView(this)
+        }
+        fun numero(dica: String, valor: Long) = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            hint = dica
+            setText(valor.toString())
+            caixa.addView(this)
+        }
+        val ligado = Switch(this).apply {
+            text = "Compra automática ligada"
+            isChecked = prefs.getBoolean(P_AC_LIGADO, false)
+            caixa.addView(this)
+        }
+        texto("Vale para todas as contas. Só compra com ouro.", 12f, 0xFF9AA8B8.toInt())
+
+        val ball = CheckBox(this).apply {
+            text = "Ultra Ball"; isChecked = prefs.getBoolean(P_AC_BALL, true); caixa.addView(this)
+        }
+        texto("Comprar quando tiver menos de:", 12f)
+        val ballMin = numero("mínimo", prefs.getInt(P_AC_BALL_MIN, 100).toLong())
+        texto("Quantas comprar de cada vez:", 12f)
+        val ballLote = numero("quantidade", prefs.getInt(P_AC_BALL_LOTE, 300).toLong())
+
+        val pot = CheckBox(this).apply {
+            text = "Ultra Potion"; isChecked = prefs.getBoolean(P_AC_POT, true); caixa.addView(this)
+        }
+        texto("Comprar quando tiver menos de:", 12f)
+        val potMin = numero("mínimo", prefs.getInt(P_AC_POT_MIN, 50).toLong())
+        texto("Quantas comprar de cada vez:", 12f)
+        val potLote = numero("quantidade", prefs.getInt(P_AC_POT_LOTE, 100).toLong())
+
+        texto("Guardar sempre pelo menos este ouro (0 = gastar o que precisar):", 12f)
+        val reserva = numero("ouro", prefs.getLong(P_AC_RESERVA, 0))
+
+        val historico = prefs.getString(P_AC_HISTORICO, "")!!
+        texto("Últimas compras:", 12f)
+        texto(historico.ifBlank { "nenhuma ainda" }, 12f, 0xFF9AA8B8.toInt())
+
+        val rolagem = android.widget.ScrollView(this).apply { addView(caixa) }
+        fun ler(c: EditText) = c.text.toString().trim().toLongOrNull()?.coerceIn(0, 1_000_000) ?: 0
+        AlertDialog.Builder(this)
+            .setTitle("Compra automática")
+            .setView(rolagem)
+            .setPositiveButton("Salvar") { _, _ ->
+                prefs.edit()
+                    .putBoolean(P_AC_LIGADO, ligado.isChecked)
+                    .putBoolean(P_AC_BALL, ball.isChecked)
+                    .putInt(P_AC_BALL_MIN, ler(ballMin).toInt())
+                    .putInt(P_AC_BALL_LOTE, ler(ballLote).toInt())
+                    .putBoolean(P_AC_POT, pot.isChecked)
+                    .putInt(P_AC_POT_MIN, ler(potMin).toInt())
+                    .putInt(P_AC_POT_LOTE, ler(potLote).toInt())
+                    .putLong(P_AC_RESERVA, ler(reserva))
+                    .apply()
+                Toast.makeText(this, if (ligado.isChecked) "Compra automática ligada" else "Compra automática desligada", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
+    }
+
     private fun compartilharIdDispositivo(web: WebView) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
         var id = prefs.getString(P_ID_DISPOSITIVO, null)
@@ -642,6 +755,7 @@ class MainActivity : Activity() {
         m.add(0, 11, 6, "Rodar com a tela apagada").apply { isCheckable = true; isChecked = prefs.getBoolean(P_TELA_APAGADA, true) }
         m.add(0, 7, 6, "Rodar em segundo plano").apply { isCheckable = true; isChecked = prefs.getBoolean(P_SEGUNDO_PLANO, true) }
         m.add(0, 8, 7, "Escurecer tela (economia)")
+        m.add(0, 13, 7, "Compra automática…" + if (prefs.getBoolean(P_AC_LIGADO, false)) " (ligada)" else "")
         m.add(0, 10, 8, "Diagnóstico de conexão")
         m.add(0, 12, 9, "Procurar atualização (v${packageManager.getPackageInfo(packageName, 0).versionName})")
         m.add(0, 9, 10, "Encerrar tudo")
@@ -672,6 +786,7 @@ class MainActivity : Activity() {
                 8 -> entrarNoEscuro()
                 9 -> encerrar()
                 10 -> mostrarDiagnostico()
+                13 -> abrirAutoCompra()
                 12 -> {
                     Toast.makeText(this, "Procurando atualização…", Toast.LENGTH_SHORT).show()
                     atualizador.verificar(manual = true)
@@ -820,6 +935,15 @@ class MainActivity : Activity() {
         private const val P_LOGIN_SLOT = "loginSlot"
         private const val P_TELA_APAGADA = "telaApagada"
         private const val P_BATERIA_PERGUNTADA = "bateriaPerguntada"
+        private const val P_AC_LIGADO = "acLigado"
+        private const val P_AC_RESERVA = "acReserva"
+        private const val P_AC_BALL = "acBall"
+        private const val P_AC_BALL_MIN = "acBallMin"
+        private const val P_AC_BALL_LOTE = "acBallLote"
+        private const val P_AC_POT = "acPot"
+        private const val P_AC_POT_MIN = "acPotMin"
+        private const val P_AC_POT_LOTE = "acPotLote"
+        private const val P_AC_HISTORICO = "acHistorico"
         private const val P_LOGIN_EM = "loginEm"
         private const val HOST_JOGO = "pokeidle.io"
 

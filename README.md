@@ -27,6 +27,10 @@ As versões novas instalam por cima e mantêm os logins (o APK sempre sai com a 
     minimizado (sem isso o navegador interno desacelera a página e a conexão cai). Pede para o app
     ficar fora da otimização de bateria.
   - *Rodar em segundo plano*: notificação fixa que impede o Android de matar o app e de pôr a CPU/Wi-Fi para dormir.
+  - *Compra automática*: compra Ultra Ball e Ultra Potion quando ficam abaixo de um mínimo, em
+    todas as contas, só com ouro (com opção de guardar uma reserva). Usa o mesmo comando do botão
+    "Comprar" do Market, no máximo uma compra a cada 30 s por item. Os termos do pokeidle permitem
+    automação que siga as regras do jogo.
   - *Escurecer tela*: tela preta com brilho mínimo, as contas continuam rodando (toque duas vezes para voltar).
   - *Encerrar tudo*
 
