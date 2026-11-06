@@ -90,7 +90,7 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
                 web.translationX = 0f; web.translationY = 0f
                 // A conta em foco fica por cima; as outras, atrás (mas vivas).
                 web.translationZ = if (i == foco) 2f else 0f
-                web.isFocusable = i == foco
+                focavel(web, i == foco)
                 web.importantForAccessibility =
                     if (i == foco) IMPORTANT_FOR_ACCESSIBILITY_AUTO else IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
                 rot?.layout(0, 0, 0, 0)
@@ -98,7 +98,7 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
                 continue
             }
 
-            web.isFocusable = true
+            focavel(web, true)
             web.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_AUTO
             web.translationZ = 0f
             val col = i % cols
@@ -125,6 +125,17 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
                 web.translationX = 0f; web.translationY = 0f
             }
         }
+    }
+
+    /**
+     * `isFocusable = false` também desliga o "focável pelo toque", e `isFocusable = true` NÃO o
+     * religa. Era o bug: a conta que ficava atrás de outra em tela cheia voltava sem aceitar
+     * teclado nem gestos. Os dois andam juntos aqui.
+     */
+    private fun focavel(v: View, sim: Boolean) {
+        v.isFocusable = sim
+        v.isFocusableInTouchMode = sim
+        if (!sim && v.hasFocus()) v.clearFocus()
     }
 
     private fun exato(px: Int) = MeasureSpec.makeMeasureSpec(px, MeasureSpec.EXACTLY)
