@@ -16,6 +16,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Message
+import android.os.PowerManager
 import android.provider.Settings
 import android.content.pm.verify.domain.DomainVerificationManager
 import android.content.pm.verify.domain.DomainVerificationUserState
@@ -88,6 +89,7 @@ class MainActivity : Activity() {
         atualizarBarra()
         vigiarRede()
         pedirPermissaoNotificacao()
+        pedirSemOtimizacaoDeBateria(forcar = false)
         atualizarServico()
 
         if (!multiPerfil) avisarSemPerfis()
@@ -241,7 +243,7 @@ class MainActivity : Activity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun novaWebView(i: Int): WebView {
-        val web = WebView(this)
+        val web = ContaWebView(this).apply { manterAtiva = prefs.getBoolean(P_TELA_APAGADA, true) }
         // O perfil tem que ser definido ANTES de qualquer outro uso da WebView.
         if (multiPerfil) {
             ProfileStore.getInstance().getOrCreateProfile(nomePerfil(i))
@@ -612,6 +614,7 @@ class MainActivity : Activity() {
         m.add(0, 4, 3, "Renomear contas…")
         m.add(0, 5, 4, "Grade em miniatura").apply { isCheckable = true; isChecked = painel.miniatura }
         m.add(0, 6, 5, "Manter tela acesa").apply { isCheckable = true; isChecked = prefs.getBoolean(P_TELA_ACESA, true) }
+        m.add(0, 11, 6, "Rodar com a tela apagada").apply { isCheckable = true; isChecked = prefs.getBoolean(P_TELA_APAGADA, true) }
         m.add(0, 7, 6, "Rodar em segundo plano").apply { isCheckable = true; isChecked = prefs.getBoolean(P_SEGUNDO_PLANO, true) }
         m.add(0, 8, 7, "Escurecer tela (economia)")
         m.add(0, 10, 8, "Diagnóstico de conexão")
@@ -629,6 +632,12 @@ class MainActivity : Activity() {
                 6 -> {
                     prefs.edit().putBoolean(P_TELA_ACESA, !prefs.getBoolean(P_TELA_ACESA, true)).apply()
                     aplicarTelaAcesa()
+                }
+                11 -> {
+                    val novo = !prefs.getBoolean(P_TELA_APAGADA, true)
+                    prefs.edit().putBoolean(P_TELA_APAGADA, novo).apply()
+                    painel.webs.forEach { (it as? ContaWebView)?.manterAtiva = novo }
+                    if (novo) pedirSemOtimizacaoDeBateria(forcar = true)
                 }
                 7 -> {
                     prefs.edit().putBoolean(P_SEGUNDO_PLANO, !prefs.getBoolean(P_SEGUNDO_PLANO, true)).apply()
@@ -710,6 +719,35 @@ class MainActivity : Activity() {
         else KeepAliveService.parar(this)
     }
 
+    /**
+     * Com a tela apagada o Android (e mais ainda a Samsung) corta CPU e rede de apps "otimizados".
+     * Pede para o MultiIdle ficar fora da otimização de bateria — o pedido oficial do sistema.
+     */
+    private fun pedirSemOtimizacaoDeBateria(forcar: Boolean) {
+        if (!prefs.getBoolean(P_TELA_APAGADA, true)) return
+        val pm = getSystemService(PowerManager::class.java)
+        if (pm.isIgnoringBatteryOptimizations(packageName)) return
+        if (!forcar && prefs.getBoolean(P_BATERIA_PERGUNTADA, false)) return
+        prefs.edit().putBoolean(P_BATERIA_PERGUNTADA, true).apply()
+        AlertDialog.Builder(this)
+            .setTitle("Rodar com a tela apagada")
+            .setMessage(
+                "Para as contas continuarem rodando com a tela apagada, o MultiIdle precisa ficar " +
+                    "fora da economia de bateria.\n\nNa próxima tela, toque em \"Permitir\"."
+            )
+            .setPositiveButton("Continuar") { _, _ ->
+                try {
+                    startActivity(
+                        Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+                    )
+                } catch (_: Exception) {
+                    startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+                }
+            }
+            .setNegativeButton("Agora não", null)
+            .show()
+    }
+
     private fun pedirPermissaoNotificacao() {
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -750,6 +788,8 @@ class MainActivity : Activity() {
         private const val P_SEGUNDO_PLANO = "segundoPlano"
         private const val P_ID_DISPOSITIVO = "idDispositivo"
         private const val P_LOGIN_SLOT = "loginSlot"
+        private const val P_TELA_APAGADA = "telaApagada"
+        private const val P_BATERIA_PERGUNTADA = "bateriaPerguntada"
         private const val P_LOGIN_EM = "loginEm"
         private const val HOST_JOGO = "pokeidle.io"
 

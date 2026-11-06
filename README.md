@@ -23,6 +23,9 @@ As versões novas instalam por cima e mantêm os logins (o APK sempre sai com a 
   - *Grade em miniatura*: cada conta é desenhada como a tela inteira reduzida (padrão). Desligado,
     a página se ajusta ao tamanho do quadradinho.
   - *Manter tela acesa*
+  - *Rodar com a tela apagada*: o jogo continua se achando visível com a tela apagada ou o app
+    minimizado (sem isso o navegador interno desacelera a página e a conexão cai). Pede para o app
+    ficar fora da otimização de bateria.
   - *Rodar em segundo plano*: notificação fixa que impede o Android de matar o app e de pôr a CPU/Wi-Fi para dormir.
   - *Escurecer tela*: tela preta com brilho mínimo, as contas continuam rodando (toque duas vezes para voltar).
   - *Encerrar tudo*
