@@ -39,6 +39,7 @@ class Atualizador(private val activity: Activity) {
     private var versaoPronta = ""
     private var verificando = false
     private var instalando = false
+    private var ultimoErro = ""
 
     private val periodico = object : Runnable {
         override fun run() {
@@ -64,7 +65,8 @@ class Atualizador(private val activity: Activity) {
         verificando = true
         Thread {
             val resultado = try {
-                val info = JSONObject(baixarTexto("$URL_VERSAO?t=${System.currentTimeMillis()}"))
+                val t = System.currentTimeMillis()
+                val info = JSONObject(baixarTexto(listOf("$URL_VERSAO?t=$t", "$API_VERSAO&t=$t")))
                 val codigo = info.getLong("versionCode")
                 if (codigo <= versaoAtual()) {
                     "atual"
@@ -72,7 +74,7 @@ class Atualizador(private val activity: Activity) {
                     val nome = info.optString("versionName", codigo.toString())
                     val arquivo = File(ctx.cacheDir, "atualizacao-$codigo.apk")
                     if (!arquivo.exists() || sha256(arquivo) != info.getString("sha256")) {
-                        baixarArquivo(info.getString("apk"), arquivo)
+                        baixarArquivo(listOf(info.getString("apk"), API_APK), arquivo)
                         if (sha256(arquivo) != info.getString("sha256")) {
                             arquivo.delete()
                             throw IllegalStateException("arquivo corrompido")
@@ -86,6 +88,7 @@ class Atualizador(private val activity: Activity) {
                     "nova"
                 }
             } catch (e: Exception) {
+                ultimoErro = e.message ?: e.javaClass.simpleName
                 "erro"
             } finally {
                 verificando = false
@@ -93,7 +96,7 @@ class Atualizador(private val activity: Activity) {
             if (manual) main.post {
                 when (resultado) {
                     "atual" -> Toast.makeText(ctx, "Você já está na versão mais nova", Toast.LENGTH_SHORT).show()
-                    "erro" -> Toast.makeText(ctx, "Não deu para procurar atualização agora", Toast.LENGTH_SHORT).show()
+                    "erro" -> Toast.makeText(ctx, "Não deu para procurar atualização: $ultimoErro", Toast.LENGTH_LONG).show()
                 }
             }
         }.start()
@@ -163,7 +166,28 @@ class Atualizador(private val activity: Activity) {
             readTimeout = 30_000
             useCaches = false
             instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "MultiIdle")
+            // Endereço reserva (api.github.com): pede o arquivo cru, não o JSON da API.
+            if (url.startsWith("https://api.github.com/")) setRequestProperty("Accept", "application/vnd.github.raw")
         }
+
+    /** Tenta cada endereço na ordem; se todos falharem, junta os motivos na mensagem. */
+    private fun <T> primeiroQueFunciona(urls: List<String>, acao: (String) -> T): T {
+        val erros = mutableListOf<String>()
+        for (u in urls) {
+            try {
+                return acao(u)
+            } catch (e: Exception) {
+                erros += "${URL(u).host}: ${e.javaClass.simpleName}${e.message?.let { " ($it)" } ?: ""}"
+            }
+        }
+        throw IllegalStateException(erros.joinToString(" / "))
+    }
+
+    private fun baixarTexto(urls: List<String>) = primeiroQueFunciona(urls) { baixarTexto(it) }
+
+    private fun baixarArquivo(urls: List<String>, destino: File) =
+        primeiroQueFunciona(urls) { baixarArquivo(it, destino) }
 
     private fun baixarTexto(url: String): String {
         val c = abrir(url)
@@ -205,6 +229,9 @@ class Atualizador(private val activity: Activity) {
     companion object {
         private const val URL_VERSAO =
             "https://raw.githubusercontent.com/Ticos1/note12/ccr-226ce79c-dpfygw/apk/versao.json"
+        private const val API_BASE = "https://api.github.com/repos/Ticos1/note12/contents/apk"
+        private const val API_VERSAO = "$API_BASE/versao.json?ref=ccr-226ce79c-dpfygw"
+        private const val API_APK = "$API_BASE/MultiIdle.apk?ref=ccr-226ce79c-dpfygw"
         private const val INTERVALO_MS = 2 * 60 * 60 * 1000L // a cada 2 h
         const val CANAL = "atualizacoes"
 

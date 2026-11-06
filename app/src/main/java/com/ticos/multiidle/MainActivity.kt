@@ -440,7 +440,7 @@ class MainActivity : Activity() {
             } catch (e: Exception) {
                 r.append("Erro lendo a rede: ").append(e.javaClass.simpleName).append('\n')
             }
-            for (host in listOf(HOST_JOGO, "google.com")) {
+            for (host in listOf(HOST_JOGO, "google.com", "raw.githubusercontent.com", "api.github.com")) {
                 r.append(
                     try {
                         val ip = java.net.InetAddress.getAllByName(host).first().hostAddress
