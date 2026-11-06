@@ -66,6 +66,7 @@ class MainActivity : Activity() {
     private lateinit var coluna: LinearLayout
     private lateinit var escuro: TextView
     private lateinit var btnGrade: TextView
+    private lateinit var btnSom: TextView
     private val abas = arrayOfNulls<TextView>(Painel.MAX)
 
     /** O WebView do aparelho suporta perfis separados? Sem isso, todas as contas dividiriam o login. */
@@ -161,6 +162,17 @@ class MainActivity : Activity() {
             abas[i] = aba
             barra.addView(aba, LinearLayout.LayoutParams(0, (34 * dp).toInt(), 1f))
         }
+        btnSom = botaoBarra("").apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            setOnClickListener {
+                val novo = !prefs.getBoolean(P_MUDO, false)
+                prefs.edit().putBoolean(P_MUDO, novo).apply()
+                pintarBotaoSom()
+                Toast.makeText(this@MainActivity, if (novo) "Som do jogo desligado" else "Som do jogo ligado", Toast.LENGTH_SHORT).show()
+            }
+        }
+        pintarBotaoSom()
+        barra.addView(btnSom, LinearLayout.LayoutParams((40 * dp).toInt(), (44 * dp).toInt()))
         val btnMenu = botaoBarra("⋮").apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
             setOnClickListener { abrirMenu(it) }
@@ -222,6 +234,12 @@ class MainActivity : Activity() {
     private fun fundoAba(selecionada: Boolean) = GradientDrawable().apply {
         cornerRadius = 8 * dp
         setColor(if (selecionada) COR_DESTAQUE else Color.TRANSPARENT)
+    }
+
+    private fun pintarBotaoSom() {
+        val mudo = prefs.getBoolean(P_MUDO, false)
+        btnSom.text = if (mudo) "🔇" else "🔊"
+        btnSom.contentDescription = if (mudo) "Ligar o som do jogo" else "Silenciar o jogo"
     }
 
     private fun atualizarBarra() {
@@ -513,9 +531,12 @@ class MainActivity : Activity() {
 
     private val scriptAutoCompra by lazy { assets.open("autocompra.js").bufferedReader().use { it.readText() } }
 
+    private val scriptSilenciar by lazy { assets.open("silenciar.js").bufferedReader().use { it.readText() } }
+
     private fun ligarAutoCompra(web: WebView, i: Int) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) return
         web.addJavascriptInterface(PonteAutoCompra(i), "MultiIdleApp")
+        WebViewCompat.addDocumentStartJavaScript(web, scriptSilenciar, setOf(ORIGEM_JOGO))
         WebViewCompat.addDocumentStartJavaScript(web, scriptAutoCompra, setOf(ORIGEM_JOGO))
     }
 
@@ -533,6 +554,9 @@ class MainActivity : Activity() {
     private inner class PonteAutoCompra(private val conta: Int) {
         @JavascriptInterface
         fun config(): String = configAutoCompra()
+
+        @JavascriptInterface
+        fun mudo(): Boolean = prefs.getBoolean(P_MUDO, false)
 
         @JavascriptInterface
         fun comprou(item: String, qtd: Int) {
@@ -935,6 +959,7 @@ class MainActivity : Activity() {
         private const val P_LOGIN_SLOT = "loginSlot"
         private const val P_TELA_APAGADA = "telaApagada"
         private const val P_BATERIA_PERGUNTADA = "bateriaPerguntada"
+        private const val P_MUDO = "mudo"
         private const val P_AC_LIGADO = "acLigado"
         private const val P_AC_RESERVA = "acReserva"
         private const val P_AC_BALL = "acBall"
