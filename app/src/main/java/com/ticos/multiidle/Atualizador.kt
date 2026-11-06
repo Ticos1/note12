@@ -208,8 +208,9 @@ class Atualizador(private val activity: Activity) {
         } finally {
             c.disconnect()
         }
-        // Só sobra um APK baixado por vez.
-        ctx.cacheDir.listFiles { f -> f.name.startsWith("atualizacao-") }?.forEach { it.delete() }
+        // Só sobra um APK baixado por vez — sem apagar o que acabou de chegar (o `.parcial`), que
+        // era o bug da 2.0: ele ia junto e o "salvar" falhava sempre.
+        ctx.cacheDir.listFiles { f -> f.name.startsWith("atualizacao-") && f != temp }?.forEach { it.delete() }
         if (!temp.renameTo(destino)) throw IllegalStateException("não deu para salvar")
     }
 
