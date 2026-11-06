@@ -67,6 +67,7 @@ class MainActivity : Activity() {
     /** O WebView do aparelho suporta perfis separados? Sem isso, todas as contas dividiriam o login. */
     private var multiPerfil = false
     private var ultimoToqueEscuro = 0L
+    private lateinit var atualizador: Atualizador
 
     private val dp get() = resources.displayMetrics.density
 
@@ -90,6 +91,8 @@ class MainActivity : Activity() {
         vigiarRede()
         pedirPermissaoNotificacao()
         pedirSemOtimizacaoDeBateria(forcar = false)
+        atualizador = Atualizador(this)
+        atualizador.iniciar()
         atualizarServico()
 
         if (!multiPerfil) avisarSemPerfis()
@@ -106,7 +109,13 @@ class MainActivity : Activity() {
     // De propósito NÃO chamamos webView.onPause()/pauseTimers() em onPause: o jogo tem que
     // continuar rodando com o app minimizado.
 
+    override fun onResume() {
+        super.onResume()
+        if (::atualizador.isInitialized) atualizador.aoVoltarParaTela()
+    }
+
     override fun onDestroy() {
+        if (::atualizador.isInitialized) atualizador.parar()
         redeCallback?.let { cb ->
             try { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } catch (_: Exception) {}
         }
@@ -618,7 +627,8 @@ class MainActivity : Activity() {
         m.add(0, 7, 6, "Rodar em segundo plano").apply { isCheckable = true; isChecked = prefs.getBoolean(P_SEGUNDO_PLANO, true) }
         m.add(0, 8, 7, "Escurecer tela (economia)")
         m.add(0, 10, 8, "Diagnóstico de conexão")
-        m.add(0, 9, 9, "Encerrar tudo")
+        m.add(0, 12, 9, "Procurar atualização (v${packageManager.getPackageInfo(packageName, 0).versionName})")
+        m.add(0, 9, 10, "Encerrar tudo")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> (painel.webs[painel.foco] as? WebView)?.reload()
@@ -646,6 +656,10 @@ class MainActivity : Activity() {
                 8 -> entrarNoEscuro()
                 9 -> encerrar()
                 10 -> mostrarDiagnostico()
+                12 -> {
+                    Toast.makeText(this, "Procurando atualização…", Toast.LENGTH_SHORT).show()
+                    atualizador.verificar(manual = true)
+                }
             }
             true
         }

@@ -45,6 +45,17 @@ As versões novas instalam por cima e mantêm os logins (o APK sempre sai com a 
   (Configurações → Apps → MultiIdle → Bateria → Sem restrições). Algumas marcas (Xiaomi, Samsung...)
   fecham apps em segundo plano mesmo com a notificação.
 
+## Atualização automática
+
+O app consulta [`apk/versao.json`](apk/versao.json) ao abrir e a cada 2 h. Quando há versão nova,
+baixa o APK (conferindo o SHA-256) e instala quando o app está aberto na tela — nunca com a tela
+apagada, para não derrubar as contas no meio do caminho. A primeira atualização pede um toque em
+"Atualizar" e a permissão "Instalar apps desconhecidos"; depois, no Android 12+, é sozinha.
+Menu ⋮ → *Procurar atualização* força a busca.
+
+Para publicar uma versão: suba `versionCode`/`versionName` em `app/build.gradle.kts`, rode
+`scripts/publicar.sh` e faça commit/push de `apk/`.
+
 ## Compilar
 
 Requer JDK 17+ e Android SDK (platform 35):
