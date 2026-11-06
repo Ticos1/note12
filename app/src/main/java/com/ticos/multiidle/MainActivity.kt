@@ -30,7 +30,11 @@ import android.view.WindowManager
 import android.webkit.CookieManager
 import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.net.ConnectivityManager
+import android.net.Network
+import kotlin.math.min
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.EditText
@@ -81,6 +85,7 @@ class MainActivity : Activity() {
 
         aplicarTelaAcesa()
         atualizarBarra()
+        vigiarRede()
         pedirPermissaoNotificacao()
         atualizarServico()
 
@@ -99,6 +104,9 @@ class MainActivity : Activity() {
     // continuar rodando com o app minimizado.
 
     override fun onDestroy() {
+        redeCallback?.let { cb ->
+            try { getSystemService(ConnectivityManager::class.java)?.unregisterNetworkCallback(cb) } catch (_: Exception) {}
+        }
         for (i in 0 until Painel.MAX) destruirConta(i)
         KeepAliveService.parar(this)
         super.onDestroy()
@@ -270,6 +278,20 @@ class MainActivity : Activity() {
                 else { abrirFora(url); true }
             }
 
+            // Sem internet / DNS falhando: mostra um aviso e tenta de novo sozinho.
+            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                if (!request.isForMainFrame || painel.webs[i] !== view) return
+                urlComErro[i] = request.url.toString()
+                view.post {
+                    view.loadDataWithBaseURL(null, paginaSemConexao(error.description), "text/html", "utf-8", null)
+                }
+                agendarNovaTentativa(i, view)
+            }
+
+            override fun onPageFinished(view: WebView, url: String?) {
+                if (urlComErro[i] == null && url?.startsWith("https://") == true) tentativas[i] = 0
+            }
+
             // Se o processo do navegador de uma conta cair (falta de memória), recria só ela
             // em vez de deixar o app inteiro fechar.
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
@@ -316,6 +338,55 @@ class MainActivity : Activity() {
         web.loadUrl(URL_JOGO)
     }
 
+    // ------------------------------------------------------------------ queda de conexão
+
+    /** A página que falhou em cada conta (null = carregou bem). */
+    private val urlComErro = arrayOfNulls<String>(Painel.MAX)
+    private val tentativas = IntArray(Painel.MAX)
+    private var redeCallback: ConnectivityManager.NetworkCallback? = null
+
+    private fun agendarNovaTentativa(i: Int, view: WebView) {
+        // 3 s, 6 s, 12 s, 24 s... até 30 s entre tentativas.
+        val espera = min(30_000L, 3_000L shl min(tentativas[i], 4))
+        view.postDelayed({ if (painel.webs[i] === view) tentarDeNovo(i) }, espera)
+    }
+
+    private fun tentarDeNovo(i: Int) {
+        val url = urlComErro[i] ?: return
+        val web = painel.webs[i] as? WebView ?: return
+        urlComErro[i] = null
+        tentativas[i]++
+        web.loadUrl(url)
+    }
+
+    /** Quando a internet volta, recarrega na hora as contas que tinham caído. */
+    private fun vigiarRede() {
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        val cb = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                runOnUiThread {
+                    for (i in 0 until Painel.MAX) if (urlComErro[i] != null) { tentativas[i] = 0; tentarDeNovo(i) }
+                }
+            }
+        }
+        try {
+            cm.registerDefaultNetworkCallback(cb)
+            redeCallback = cb
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun paginaSemConexao(motivo: CharSequence?) = """
+        <html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+        <body style="background:#121A24;color:#E8EDF3;font-family:sans-serif;display:flex;
+          align-items:center;justify-content:center;height:90vh;text-align:center;margin:0">
+        <div><div style="font-size:42px">📡</div>
+        <h2 style="margin:12px 0">Sem conexão com o pokeidle</h2>
+        <p style="color:#9AA8B8">Tentando de novo sozinho…<br>
+        Confira se o celular está com internet.</p>
+        <p style="color:#5B6B80;font-size:12px">${TextUtils.htmlEncode(motivo?.toString() ?: "")}</p></div></body></html>
+    """.trimIndent()
+
     private fun destruirConta(i: Int) {
         (painel.webs[i] as? WebView)?.let {
             painel.removeView(it)
@@ -325,6 +396,8 @@ class MainActivity : Activity() {
         painel.rotulos[i]?.let { painel.removeView(it) }
         painel.webs[i] = null
         painel.rotulos[i] = null
+        urlComErro[i] = null
+        tentativas[i] = 0
     }
 
     /**
