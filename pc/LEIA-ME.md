@@ -11,6 +11,14 @@ no seu Brave normal.
    Os logins ficam salvos em `%LOCALAPPDATA%\MultiIdle`.
 3. Para mudar a quantidade de contas, edite a linha `set CONTAS=3`.
 
+### Extensões
+
+Cada janela é um perfil separado do Brave: **instale a extensão uma vez em cada janela** (pela
+Chrome Web Store, que o Brave aceita). Elas ficam salvas junto com o login daquela conta.
+O padrão (`set MODO=normal`) abre janelas comuns, com a barra de ferramentas e os ícones das
+extensões. `set MODO=app` abre janelas limpas, sem barra — as extensões continuam rodando, mas
+não dá para clicar nelas nem instalar novas.
+
 As janelas abrem com opções do Brave que impedem que ele desacelere janelas escondidas ou
 minimizadas, então dá para deixar o jogo atrás das janelas de trabalho.
 

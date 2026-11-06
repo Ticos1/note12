@@ -11,7 +11,10 @@ rem ============================================================================
 rem Quantas contas abrir (1 a 4):
 set CONTAS=3
 set "URL=https://pokeidle.io/app"
-rem Onde ficam os logins de cada conta:
+rem normal = janela comum do Brave, com barra e EXTENSOES (instale em cada janela uma vez)
+rem app    = janela limpa, sem barra (as extensoes rodam, mas os icones nao aparecem)
+set MODO=normal
+rem Onde ficam os logins (e extensoes) de cada conta:
 set "PASTA=%LOCALAPPDATA%\MultiIdle"
 
 rem --- acha o Brave ---
@@ -36,6 +39,7 @@ if not defined H set H=1040
 
 rem --- uma janela por conta, em colunas ---
 set /a LARG=W/CONTAS
+if /i "%MODO%"=="app" (set "ABRIR=--app=!URL!") else (set "ABRIR=--new-window !URL!")
 for /L %%i in (1,1,%CONTAS%) do (
   set /a "X=(%%i-1)*LARG"
   start "" "!BRAVE!" ^
@@ -44,7 +48,7 @@ for /L %%i in (1,1,%CONTAS%) do (
     --disable-background-timer-throttling ^
     --disable-renderer-backgrounding ^
     --disable-backgrounding-occluded-windows ^
-    --app="!URL!" ^
-    --window-position=!X!,0 --window-size=!LARG!,!H!
+    --window-position=!X!,0 --window-size=!LARG!,!H! ^
+    !ABRIR!
 )
 exit /b 0
