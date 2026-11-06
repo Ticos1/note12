@@ -1,6 +1,8 @@
 package com.ticos.multiidle
 
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.RectF
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -69,6 +71,20 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
     /** Onde cada conta está na tela (para saber em qual delas a pinça começou). */
     private val areas = Array(MAX) { RectF() }
 
+    /**
+     * GRADE EM MINIATURA: todas as WebViews ficam no MESMO lugar (canto de cima, à esquerda) e só o
+     * DESENHO e o TOQUE são levados até a célula de cada uma (`desloc`).
+     *
+     * Por quê: o navegador da WebView calcula quanto dela está visível na tela sem considerar a
+     * redução. Uma conta da linha de baixo, posta lá com `translationY`, "passava da tela" pela
+     * metade aos olhos dele — e o jogo encolhia a altura útil pela metade (o layout cortado das
+     * contas de baixo). No canto de cima, como a Conta 1 sempre esteve, isso não acontece.
+     */
+    private val deslocX = FloatArray(MAX)
+    private val deslocY = FloatArray(MAX)
+    private var desenhoDeslocado = false
+    private val areasRotulo = Array(MAX) { RectF() }
+
     private val alturaRotulo = (26 * resources.displayMetrics.density).toInt()
     private val espaco = (2 * resources.displayMetrics.density).toInt()
 
@@ -113,8 +129,12 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
         val (cols, rows) = grade(quantidade, w, h)
         val cw = (w - espaco * (cols - 1)) / cols
         val ch = (h - espaco * (rows - 1)) / rows
+        desenhoDeslocado = foco < 0 && miniatura
 
         for (i in 0 until MAX) {
+            deslocX[i] = 0f
+            deslocY[i] = 0f
+            areasRotulo[i].setEmpty()
             val web = webs[i] ?: continue
             val rot = rotulos[i]
 
@@ -145,6 +165,7 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
             val y = row * (ch + espaco)
             rot?.visibility = View.VISIBLE
             rot?.layout(x, y, x + cw, y + alturaRotulo)
+            areasRotulo[i].set(x.toFloat(), y.toFloat(), (x + cw).toFloat(), (y + alturaRotulo).toFloat())
             rot?.translationZ = 1f
 
             val ay = y + alturaRotulo
@@ -158,8 +179,10 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
                 web.layout(0, 0, lw, lh)
                 val s = min(aw / w.toFloat(), ah / h.toFloat()) * zv
                 web.scaleX = s; web.scaleY = s
-                web.translationX = x + (aw - lw * s) / 2f
-                web.translationY = ay + (ah - lh * s) / 2f
+                web.translationX = 0f
+                web.translationY = 0f
+                deslocX[i] = x + (aw - lw * s) / 2f
+                deslocY[i] = ay + (ah - lh * s) / 2f
             } else {
                 web.layout(x, ay, x + (aw / z).toInt(), ay + (ah / z).toInt())
                 web.scaleX = zv; web.scaleY = zv
@@ -219,16 +242,61 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
                 cancelarFilhos = false
                 val c = MotionEvent.obtain(ev)
                 c.action = MotionEvent.ACTION_CANCEL
-                super.dispatchTouchEvent(c)
+                entregar(c)
                 c.recycle()
             }
             if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
                 pincando = false
                 alvoPinca = -1
+                alvoToque = SEM_ALVO
             }
             return true
         }
-        return super.dispatchTouchEvent(ev)
+        return entregar(ev)
+    }
+
+    // ------------------------------------------------------------------ toque na grade deslocada
+
+    /** Quem recebe o gesto em curso: índice da conta, RÓTULO (caminho normal) ou ninguém. */
+    private var alvoToque = SEM_ALVO
+
+    private fun entregar(ev: MotionEvent): Boolean {
+        if (!desenhoDeslocado) return super.dispatchTouchEvent(ev)
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) {
+            alvoToque = when {
+                (0 until quantidade).any { areasRotulo[it].contains(ev.x, ev.y) } -> ROTULO
+                else -> contaEm(ev.x, ev.y).let { if (it >= 0) it else SEM_ALVO }
+            }
+        }
+        val alvo = alvoToque
+        if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) alvoToque = SEM_ALVO
+        return when {
+            alvo == ROTULO -> super.dispatchTouchEvent(ev)
+            alvo >= 0 -> {
+                val web = webs[alvo] ?: return false
+                // Da tela para dentro da conta: tira o deslocamento e desfaz a redução.
+                val m = Matrix()
+                m.setTranslate(-deslocX[alvo] - web.left, -deslocY[alvo] - web.top)
+                m.postScale(1f / web.scaleX, 1f / web.scaleY)
+                val local = MotionEvent.obtain(ev)
+                local.transform(m)
+                val ok = web.dispatchTouchEvent(local)
+                local.recycle()
+                ok
+            }
+            else -> false
+        }
+    }
+
+    override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
+        val i = if (desenhoDeslocado) webs.indexOf(child) else -1
+        if (i < 0) return super.drawChild(canvas, child, drawingTime)
+        canvas.save()
+        canvas.clipRect(areas[i])
+        canvas.translate(deslocX[i], deslocY[i])
+        val r = super.drawChild(canvas, child, drawingTime)
+        canvas.restore()
+        return r
     }
 
     /**
@@ -246,6 +314,8 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
 
     companion object {
         const val MAX = 4
+        private const val SEM_ALVO = -1
+        private const val ROTULO = -2
         const val ZOOM_MIN = 0.4f
         const val ZOOM_MAX = 2.0f
     }
