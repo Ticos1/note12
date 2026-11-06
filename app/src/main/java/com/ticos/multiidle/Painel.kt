@@ -1,8 +1,12 @@
 package com.ticos.multiidle
 
 import android.content.Context
+import android.graphics.RectF
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.min
 
@@ -17,6 +21,12 @@ import kotlin.math.min
  * No modo "miniatura" cada WebView tem sempre o tamanho da tela inteira e só é reduzida na
  * hora de desenhar. O jogo enxerga um celular normal (nada de layout espremido), e trocar
  * entre grade e foco não recarrega nem reorganiza a página.
+ *
+ * ZOOM POR CONTA (pinça com dois dedos): o pokeidle no celular não deixa a página diminuir
+ * (o "zoom out" do navegador para em 100%). Então o zoom é feito aqui: com zoom 0,7 a WebView
+ * ganha uma tela 1/0,7 vezes maior e é desenhada 0,7 vezes menor — o jogo se reorganiza para
+ * a tela "maior" e tudo cabe (o modal do Mapa inteiro, por exemplo). Com zoom acima de 1, o
+ * contrário: tudo maior. Durante o gesto só o desenho muda; a página se reorganiza ao soltar.
  */
 class Painel(ctx: Context) : ViewGroup(ctx) {
 
@@ -34,6 +44,30 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
     /** true = miniatura da tela inteira; false = a página se ajusta ao tamanho da célula. */
     var miniatura = true
         set(v) { field = v; requestLayout() }
+
+    /** Zoom de cada conta: o da página (`zoomLayout`) e o que está na tela durante a pinça. */
+    private val zoomLayout = FloatArray(MAX) { 1f }
+    private val zoomVisual = FloatArray(MAX) { 1f }
+
+    /** Chamado ao soltar a pinça, para o app guardar o zoom daquela conta. */
+    var aoMudarZoom: ((Int, Float) -> Unit)? = null
+
+    fun zoomDe(i: Int) = zoomLayout[i]
+
+    fun definirZoom(i: Int, z: Float) {
+        val v = ajustarZoom(z)
+        zoomLayout[i] = v
+        zoomVisual[i] = v
+        requestLayout()
+    }
+
+    private fun ajustarZoom(z: Float): Float {
+        val v = z.coerceIn(ZOOM_MIN, ZOOM_MAX)
+        return if (abs(v - 1f) < 0.05f) 1f else v
+    }
+
+    /** Onde cada conta está na tela (para saber em qual delas a pinça começou). */
+    private val areas = Array(MAX) { RectF() }
 
     private val alturaRotulo = (26 * resources.displayMetrics.density).toInt()
     private val espaco = (2 * resources.displayMetrics.density).toInt()
@@ -65,9 +99,10 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
             val web = webs[i] ?: continue
             val rot = rotulos[i]
             val tamanhoCheio = foco >= 0 || miniatura
+            val z = zoomLayout[i]
             val ww = if (tamanhoCheio) w else cw
             val wh = if (tamanhoCheio) h else (ch - alturaRotulo)
-            web.measure(exato(ww), exato(wh.coerceAtLeast(1)))
+            web.measure(exato((ww / z).toInt().coerceAtLeast(1)), exato((wh / z).toInt().coerceAtLeast(1)))
             rot?.measure(exato(cw), exato(alturaRotulo))
         }
     }
@@ -83,11 +118,14 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
             val web = webs[i] ?: continue
             val rot = rotulos[i]
 
+            val z = zoomLayout[i]
+            val zv = zoomVisual[i]
             if (foco >= 0) {
-                web.layout(0, 0, w, h)
+                web.layout(0, 0, (w / z).toInt(), (h / z).toInt())
                 web.pivotX = 0f; web.pivotY = 0f
-                web.scaleX = 1f; web.scaleY = 1f
+                web.scaleX = zv; web.scaleY = zv
                 web.translationX = 0f; web.translationY = 0f
+                areas[i].set(0f, 0f, w.toFloat(), h.toFloat())
                 // A conta em foco fica por cima; as outras, atrás (mas vivas).
                 web.translationZ = if (i == foco) 2f else 0f
                 focavel(web, i == foco)
@@ -112,19 +150,85 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
             val ay = y + alturaRotulo
             val aw = cw
             val ah = ch - alturaRotulo
+            areas[i].set(x.toFloat(), ay.toFloat(), (x + aw).toFloat(), (ay + ah).toFloat())
+            web.pivotX = 0f; web.pivotY = 0f
             if (miniatura) {
-                web.layout(0, 0, w, h)
-                val s = min(aw / w.toFloat(), ah / h.toFloat())
-                web.pivotX = 0f; web.pivotY = 0f
+                val lw = (w / z).toInt()
+                val lh = (h / z).toInt()
+                web.layout(0, 0, lw, lh)
+                val s = min(aw / w.toFloat(), ah / h.toFloat()) * zv
                 web.scaleX = s; web.scaleY = s
-                web.translationX = x + (aw - w * s) / 2f
-                web.translationY = ay + (ah - h * s) / 2f
+                web.translationX = x + (aw - lw * s) / 2f
+                web.translationY = ay + (ah - lh * s) / 2f
             } else {
-                web.layout(x, ay, x + aw, ay + ah)
-                web.scaleX = 1f; web.scaleY = 1f
+                web.layout(x, ay, x + (aw / z).toInt(), ay + (ah / z).toInt())
+                web.scaleX = zv; web.scaleY = zv
                 web.translationX = 0f; web.translationY = 0f
             }
         }
+    }
+
+    // ------------------------------------------------------------------ pinça
+
+    private var alvoPinca = -1
+    private var pincando = false
+    private var cancelarFilhos = false
+
+    private val pinca = ScaleGestureDetector(ctx, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+        override fun onScaleBegin(d: ScaleGestureDetector): Boolean {
+            alvoPinca = contaEm(d.focusX, d.focusY)
+            if (alvoPinca < 0 || webs[alvoPinca] == null) return false
+            pincando = true
+            cancelarFilhos = true
+            return true
+        }
+
+        override fun onScale(d: ScaleGestureDetector): Boolean {
+            val i = alvoPinca
+            if (i < 0) return false
+            zoomVisual[i] = (zoomVisual[i] * d.scaleFactor).coerceIn(ZOOM_MIN, ZOOM_MAX)
+            requestLayout()
+            return true
+        }
+
+        override fun onScaleEnd(d: ScaleGestureDetector) {
+            val i = alvoPinca
+            if (i < 0) return
+            val z = ajustarZoom(zoomVisual[i])
+            zoomLayout[i] = z
+            zoomVisual[i] = z
+            requestLayout()
+            aoMudarZoom?.invoke(i, z)
+        }
+    }).apply { isQuickScaleEnabled = false }
+
+    private fun contaEm(x: Float, y: Float): Int {
+        if (foco >= 0) return foco
+        for (i in 0 until quantidade) if (webs[i] != null && areas[i].contains(x, y)) return i
+        return -1
+    }
+
+    /**
+     * Dois dedos fazendo pinça = zoom DA CONTA (não do jogo). Assim que a pinça é reconhecida, a
+     * página recebe um "cancelar" e não vê mais nada até os dedos saírem da tela.
+     */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        pinca.onTouchEvent(ev)
+        if (pincando) {
+            if (cancelarFilhos) {
+                cancelarFilhos = false
+                val c = MotionEvent.obtain(ev)
+                c.action = MotionEvent.ACTION_CANCEL
+                super.dispatchTouchEvent(c)
+                c.recycle()
+            }
+            if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) {
+                pincando = false
+                alvoPinca = -1
+            }
+            return true
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     /**
@@ -142,5 +246,7 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
 
     companion object {
         const val MAX = 4
+        const val ZOOM_MIN = 0.4f
+        const val ZOOM_MAX = 2.0f
     }
 }

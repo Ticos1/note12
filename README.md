@@ -16,6 +16,9 @@ As versões novas instalam por cima e mantêm os logins (o APK sempre sai com a 
 - Cada conta roda num **perfil separado** do WebView: login, cookies e dados próprios. Os logins ficam salvos.
 - **▦ Todas**: mostra as contas lado a lado (toque na faixa com o nome para abrir uma em tela cheia).
 - **Abas com o nome**: abre aquela conta em tela cheia. As outras continuam rodando por trás.
+- **Pinça com dois dedos**: zoom daquela conta (cada uma guarda o seu). Diminuir faz o jogo se
+  reorganizar numa tela "maior" (cabe mais coisa); aumentar deixa tudo maior. A pinça é do app,
+  não do jogo: o zoom do mapa do jogo passa a ser pelos botões dele. Menu ⋮ volta a conta a 100%.
 - **Botão Voltar**: volta para a grade; na grade, só minimiza o app (não fecha as contas).
 - **Menu ⋮**
   - Recarregar uma conta ou todas

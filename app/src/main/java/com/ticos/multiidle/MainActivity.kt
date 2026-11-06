@@ -180,6 +180,11 @@ class MainActivity : Activity() {
         barra.addView(btnMenu, LinearLayout.LayoutParams((44 * dp).toInt(), (44 * dp).toInt()))
 
         painel = Painel(this)
+        for (i in 0 until Painel.MAX) painel.definirZoom(i, prefs.getFloat("zoom$i", 1f))
+        painel.aoMudarZoom = { i, z ->
+            prefs.edit().putFloat("zoom$i", z).apply()
+            Toast.makeText(this, "${nomeConta(i)}: zoom ${(z * 100).toInt()}%", Toast.LENGTH_SHORT).show()
+        }
         coluna.addView(barra, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (44 * dp).toInt()))
         coluna.addView(painel, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
         raiz.addView(coluna, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
@@ -790,6 +795,9 @@ class MainActivity : Activity() {
         val menu = PopupMenu(this, ancora)
         val m = menu.menu
         if (painel.foco >= 0) m.add(0, 1, 0, "Recarregar ${nomeConta(painel.foco)}")
+        if (painel.foco >= 0 && painel.zoomDe(painel.foco) != 1f) {
+            m.add(0, 15, 0, "Zoom de ${nomeConta(painel.foco)}: ${(painel.zoomDe(painel.foco) * 100).toInt()}% → voltar a 100%")
+        }
         m.add(0, 2, 1, "Recarregar todas")
         m.add(0, 3, 2, "Quantidade de contas…")
         m.add(0, 4, 3, "Renomear contas…")
@@ -831,6 +839,10 @@ class MainActivity : Activity() {
                 9 -> encerrar()
                 10 -> mostrarDiagnostico()
                 13 -> abrirAutoCompra()
+                15 -> {
+                    painel.definirZoom(painel.foco, 1f)
+                    prefs.edit().putFloat("zoom${painel.foco}", 1f).apply()
+                }
                 14 -> sniper.abrir()
                 12 -> {
                     Toast.makeText(this, "Procurando atualização…", Toast.LENGTH_SHORT).show()
