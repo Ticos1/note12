@@ -398,6 +398,8 @@ class MainActivity : Activity() {
             .setMessage("Testando…")
             .setPositiveButton("Fechar", null)
             .show()
+        val links = linksLiberados()
+        val navegador = navegadorQueDevolve()
         Thread {
             val r = StringBuilder()
             val cm = getSystemService(ConnectivityManager::class.java)
@@ -459,6 +461,8 @@ class MainActivity : Activity() {
                     "❌ Não abriu https://$HOST_JOGO: ${e.javaClass.simpleName}\n"
                 }
             )
+            r.append(if (links) "✅ Links do pokeidle.io liberados (login Google)\n" else "❌ Links do pokeidle.io NÃO liberados (login Google não volta)\n")
+            r.append("Navegador do login: ").append(navegador ?: "padrão do celular").append('\n')
             r.append("\nWebView: ").append(WebView.getCurrentWebViewPackage()?.versionName ?: "?")
             r.append("\nAndroid ").append(Build.VERSION.RELEASE).append(" · ").append(Build.MANUFACTURER)
             runOnUiThread { if (dlg.isShowing) dlg.setMessage(r.toString()) }
@@ -534,7 +538,6 @@ class MainActivity : Activity() {
                     "Depois volte aqui e toque no botão do Google de novo."
             )
             .setPositiveButton("Abrir configurações") { _, _ -> abrirConfigLinks() }
-            .setNeutralButton("Tentar assim mesmo") { _, _ -> abrirCustomTab(url) }
             .setNegativeButton("Cancelar", null)
             .show()
     }
@@ -563,9 +566,22 @@ class MainActivity : Activity() {
         startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, pacote))
     }
 
+    private fun navegadorQueDevolve(): String? =
+        listOf("com.android.chrome", "com.chrome.beta", "com.sec.android.app.sbrowser").firstOrNull { pacote ->
+            try {
+                packageManager.getApplicationInfo(pacote, 0).enabled
+            } catch (_: Exception) {
+                false
+            }
+        }
+
     private fun abrirCustomTab(url: Uri) {
         try {
-            CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(this, url)
+            val aba = CustomTabsIntent.Builder().setShowTitle(true).build()
+            // O Chrome devolve a volta do login para o app que tem o link liberado; o Brave
+            // (visto no celular) não devolve e abre o jogo dentro da própria aba. Então: Chrome, se tiver.
+            navegadorQueDevolve()?.let { aba.intent.setPackage(it) }
+            aba.launchUrl(this, url)
         } catch (_: ActivityNotFoundException) {
             Toast.makeText(this, "Nenhum navegador encontrado", Toast.LENGTH_LONG).show()
         }
