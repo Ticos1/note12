@@ -31,6 +31,11 @@ As versões novas instalam por cima e mantêm os logins (o APK sempre sai com a 
     todas as contas, só com ouro (com opção de guardar uma reserva). Usa o mesmo comando do botão
     "Comprar" do Market, no máximo uma compra a cada 30 s por item. Os termos do pokeidle permitem
     automação que siga as regras do jogo.
+  - *Sniper do RMT* (só na conta principal): regras com o item ou pokémon, a moeda (Coins ou
+    Gemas), o preço máximo por unidade e a quantidade máxima, mais um limite de gasto por dia em cada
+    moeda. Olha o mercado a cada 30 s e, quando um anúncio que cabe na regra libera (todo anúncio
+    novo fica 2 min retido), entra no sorteio de 3 s com o mesmo pedido do botão "Comprar". Avisa por
+    notificação quando leva. Em Gemas, o limite padrão é 0 (não compra) até você mudar.
   - *Escurecer tela*: tela preta com brilho mínimo, as contas continuam rodando (toque duas vezes para voltar).
   - *Encerrar tudo*
 

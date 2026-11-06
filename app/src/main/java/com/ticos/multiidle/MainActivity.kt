@@ -529,7 +529,12 @@ class MainActivity : Activity() {
     // Potion quando ficam abaixo do mínimo. A configuração é uma só para todas as contas e é
     // lida pelo script a cada 5 s, então mudar no menu vale na hora, sem recarregar.
 
-    private val scriptAutoCompra by lazy { assets.open("autocompra.js").bufferedReader().use { it.readText() } }
+    /** Núcleo (observa o WebSocket do jogo) + compra automática + sniper, numa ordem garantida. */
+    private val scriptAutoCompra by lazy {
+        listOf("nucleo.js", "autocompra.js", "sniper.js")
+            .joinToString("\n;\n") { nome -> assets.open(nome).bufferedReader().use { it.readText() } }
+    }
+    private val sniper by lazy { Sniper(this, prefs, ::nomeConta) { painel.quantidade } }
 
     private val scriptSilenciar by lazy { assets.open("silenciar.js").bufferedReader().use { it.readText() } }
 
@@ -557,6 +562,20 @@ class MainActivity : Activity() {
 
         @JavascriptInterface
         fun mudo(): Boolean = prefs.getBoolean(P_MUDO, false)
+
+        @JavascriptInterface
+        fun sniperConfig(): String = sniper.configParaScript(conta)
+
+        @JavascriptInterface
+        fun sniperEvento(json: String) = sniper.evento(json)
+
+        @JavascriptInterface
+        fun souPrincipal(): Boolean = conta == sniper.contaPrincipal()
+
+        @JavascriptInterface
+        fun sniperCatalogo(json: String) {
+            if (conta == sniper.contaPrincipal()) sniper.salvarCatalogo(json)
+        }
 
         @JavascriptInterface
         fun comprou(item: String, qtd: Int) {
@@ -779,6 +798,7 @@ class MainActivity : Activity() {
         m.add(0, 11, 6, "Rodar com a tela apagada").apply { isCheckable = true; isChecked = prefs.getBoolean(P_TELA_APAGADA, true) }
         m.add(0, 7, 6, "Rodar em segundo plano").apply { isCheckable = true; isChecked = prefs.getBoolean(P_SEGUNDO_PLANO, true) }
         m.add(0, 8, 7, "Escurecer tela (economia)")
+        m.add(0, 14, 7, "Sniper do RMT…")
         m.add(0, 13, 7, "Compra automática…" + if (prefs.getBoolean(P_AC_LIGADO, false)) " (ligada)" else "")
         m.add(0, 10, 8, "Diagnóstico de conexão")
         m.add(0, 12, 9, "Procurar atualização (v${packageManager.getPackageInfo(packageName, 0).versionName})")
@@ -811,6 +831,7 @@ class MainActivity : Activity() {
                 9 -> encerrar()
                 10 -> mostrarDiagnostico()
                 13 -> abrirAutoCompra()
+                14 -> sniper.abrir()
                 12 -> {
                     Toast.makeText(this, "Procurando atualização…", Toast.LENGTH_SHORT).show()
                     atualizador.verificar(manual = true)
