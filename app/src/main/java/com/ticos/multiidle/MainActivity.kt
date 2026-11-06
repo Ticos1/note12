@@ -34,6 +34,7 @@ import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.net.ConnectivityManager
 import android.net.Network
+import android.net.NetworkCapabilities
 import kotlin.math.min
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -376,6 +377,83 @@ class MainActivity : Activity() {
         }
     }
 
+    /**
+     * Testa a rede DESTE app (não a do celular): o Android e apps de firewall/VPN podem cortar a
+     * internet só de um app. O resultado sai numa janela para o usuário mandar print.
+     */
+    private fun mostrarDiagnostico() {
+        val dlg = AlertDialog.Builder(this)
+            .setTitle("Diagnóstico de conexão")
+            .setMessage("Testando…")
+            .setPositiveButton("Fechar", null)
+            .show()
+        Thread {
+            val r = StringBuilder()
+            val cm = getSystemService(ConnectivityManager::class.java)
+            try {
+                val rede = cm.activeNetwork
+                if (rede == null) {
+                    r.append("❌ O app não vê nenhuma rede ativa\n")
+                } else {
+                    val cap = cm.getNetworkCapabilities(rede)
+                    val tipos = buildList {
+                        if (cap?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) add("Wi-Fi")
+                        if (cap?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true) add("dados móveis")
+                        if (cap?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) add("VPN")
+                    }
+                    r.append("Rede: ").append(tipos.joinToString(" + ").ifEmpty { "desconhecida" }).append('\n')
+                    r.append(if (cap?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true)
+                        "✅ Rede com internet\n" else "⚠️ Rede sem internet confirmada\n")
+                    if (cap?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true)
+                        r.append("⚠️ Há uma VPN / bloqueador ativo — ele pode estar bloqueando o MultiIdle\n")
+                    val lp = cm.getLinkProperties(rede)
+                    if (Build.VERSION.SDK_INT >= 28 && lp != null) {
+                        r.append("DNS privado: ").append(
+                            when {
+                                lp.privateDnsServerName != null -> lp.privateDnsServerName
+                                lp.isPrivateDnsActive -> "automático (ativo)"
+                                else -> "desligado/automático"
+                            }
+                        ).append('\n')
+                    }
+                }
+                when (cm.restrictBackgroundStatus) {
+                    ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED ->
+                        r.append("⚠️ Economia de dados LIGADA e restringindo o MultiIdle\n")
+                    ConnectivityManager.RESTRICT_BACKGROUND_STATUS_WHITELISTED ->
+                        r.append("Economia de dados ligada, MultiIdle liberado\n")
+                    else -> {}
+                }
+            } catch (e: Exception) {
+                r.append("Erro lendo a rede: ").append(e.javaClass.simpleName).append('\n')
+            }
+            for (host in listOf(HOST_JOGO, "google.com")) {
+                r.append(
+                    try {
+                        val ip = java.net.InetAddress.getAllByName(host).first().hostAddress
+                        "✅ Encontrou $host ($ip)\n"
+                    } catch (e: Exception) {
+                        "❌ Não encontrou $host\n"
+                    }
+                )
+            }
+            r.append(
+                try {
+                    val c = java.net.URL("https://$HOST_JOGO/").openConnection() as java.net.HttpURLConnection
+                    c.connectTimeout = 8000; c.readTimeout = 8000
+                    val code = c.responseCode
+                    c.disconnect()
+                    "✅ Abriu https://$HOST_JOGO (código $code)\n"
+                } catch (e: Exception) {
+                    "❌ Não abriu https://$HOST_JOGO: ${e.javaClass.simpleName}\n"
+                }
+            )
+            r.append("\nWebView: ").append(WebView.getCurrentWebViewPackage()?.versionName ?: "?")
+            r.append("\nAndroid ").append(Build.VERSION.RELEASE).append(" · ").append(Build.MANUFACTURER)
+            runOnUiThread { if (dlg.isShowing) dlg.setMessage(r.toString()) }
+        }.start()
+    }
+
     private fun paginaSemConexao(motivo: CharSequence?) = """
         <html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
         <body style="background:#121A24;color:#E8EDF3;font-family:sans-serif;display:flex;
@@ -384,6 +462,7 @@ class MainActivity : Activity() {
         <h2 style="margin:12px 0">Sem conexão com o pokeidle</h2>
         <p style="color:#9AA8B8">Tentando de novo sozinho…<br>
         Confira se o celular está com internet.</p>
+        <p style="color:#F2C14E">Se não resolver: menu ⋮ → Diagnóstico de conexão</p>
         <p style="color:#5B6B80;font-size:12px">${TextUtils.htmlEncode(motivo?.toString() ?: "")}</p></div></body></html>
     """.trimIndent()
 
@@ -535,7 +614,8 @@ class MainActivity : Activity() {
         m.add(0, 6, 5, "Manter tela acesa").apply { isCheckable = true; isChecked = prefs.getBoolean(P_TELA_ACESA, true) }
         m.add(0, 7, 6, "Rodar em segundo plano").apply { isCheckable = true; isChecked = prefs.getBoolean(P_SEGUNDO_PLANO, true) }
         m.add(0, 8, 7, "Escurecer tela (economia)")
-        m.add(0, 9, 8, "Encerrar tudo")
+        m.add(0, 10, 8, "Diagnóstico de conexão")
+        m.add(0, 9, 9, "Encerrar tudo")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> (painel.webs[painel.foco] as? WebView)?.reload()
@@ -556,6 +636,7 @@ class MainActivity : Activity() {
                 }
                 8 -> entrarNoEscuro()
                 9 -> encerrar()
+                10 -> mostrarDiagnostico()
             }
             true
         }
