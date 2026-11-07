@@ -140,14 +140,6 @@ class Painel(ctx: Context) : ViewGroup(ctx) {
 
             val z = zoomLayout[i]
             val zv = zoomVisual[i]
-            (web as? ContaWebView)?.let {
-                // A página é maior que a tela quando há zoom de afastar (w/z × h/z); veja ContaWebView.
-                val tamanhoCheio = foco >= 0 || miniatura
-                val bw = if (tamanhoCheio) w else cw
-                val bh = if (tamanhoCheio) h else ch - alturaRotulo
-                it.excessoX = ((bw / z).toInt() - bw).coerceAtLeast(0)
-                it.excessoY = ((bh / z).toInt() - bh).coerceAtLeast(0)
-            }
             if (foco >= 0) {
                 web.layout(0, 0, (w / z).toInt(), (h / z).toInt())
                 web.pivotX = 0f; web.pivotY = 0f

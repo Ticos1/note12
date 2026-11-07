@@ -10,21 +10,40 @@
   if (window.__multiIdleAltura) return;
   window.__multiIdleAltura = true;
   let nosso = false;
+  // Só escreve quando muda: o observador do `style` chamaria `aplicar` de novo em laço.
+  function definir(raiz, nome, valor) {
+    if (raiz.style.getPropertyValue(nome) !== valor) raiz.style.setProperty(nome, valor);
+  }
   function aplicar() {
     // No início do documento o <html> pode ainda não existir.
     const raiz = document.documentElement;
     if (!raiz) return;
     const celular = raiz.classList.contains('mobile');
     if (!celular) {
-      if (nosso) { raiz.style.removeProperty('--vh'); raiz.style.removeProperty('--vw'); nosso = false; }
+      if (nosso) {
+        raiz.style.removeProperty('--vh'); raiz.style.removeProperty('--vw'); raiz.style.removeProperty('--m-alt');
+        nosso = false;
+      }
       return;
     }
+    // A altura vem do APP (o tamanho da WebView em px de CSS), não da `visualViewport`: dentro do
+    // app a WebView às vezes informa uma área visível bem menor que ela mesma (a Conta 4 chegou a
+    // usar só metade da tela, até em tela cheia a 100%). O teclado continua certo: o app encolhe a
+    // WebView inteira quando ele abre. Sem o app (navegador comum), vale a `visualViewport`.
     const vv = window.visualViewport;
-    const h = vv ? vv.height : window.innerHeight;
-    const w = vv ? vv.width : window.innerWidth;
+    let h = vv ? vv.height : window.innerHeight;
+    let w = vv ? vv.width : window.innerWidth;
+    try {
+      const [aw, ah] = String(window.MultiIdleApp.tamanhoCss()).split(',').map(Number);
+      // Conferência: a largura do app tem de bater com a da página (a largura nunca veio errada).
+      if (aw > 0 && ah > 0 && Math.abs(window.innerWidth - aw) <= aw * 0.15) { w = aw; h = ah; }
+    } catch (_) {}
     if (!(h > 0 && w > 0)) return;
-    raiz.style.setProperty('--vh', `${h / 100}px`);
-    raiz.style.setProperty('--vw', `${w / 100}px`);
+    definir(raiz, '--vh', `${h / 100}px`);
+    definir(raiz, '--vw', `${w / 100}px`);
+    // `--m-alt` é a altura do app inteiro no celular; o mobile.mjs escreve a da `visualViewport`
+    // a cada `resize`. O observador do `style` (abaixo) devolve a altura certa logo depois.
+    definir(raiz, '--m-alt', `${Math.round(h)}px`);
     nosso = true;
     reescreverFolhas();
   }
@@ -85,7 +104,7 @@
   // A classe `mobile` chega depois da carga (mobile.mjs): observa o <html> para pegar na hora.
   const observar = () => {
     if (!document.documentElement) return false;
-    new MutationObserver(aplicar).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    new MutationObserver(aplicar).observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'style'] });
     aplicar();
     return true;
   };

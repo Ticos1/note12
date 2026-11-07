@@ -568,6 +568,20 @@ class MainActivity : Activity() {
         @JavascriptInterface
         fun mudo(): Boolean = prefs.getBoolean(P_MUDO, false)
 
+        /**
+         * O tamanho de verdade desta conta, em px de CSS ("largura,altura"), para o altura.js.
+         * Dentro do app a WebView às vezes informa à página uma área visível bem menor que ela
+         * (o `vh` e a `visualViewport`), e o jogo, que dimensiona o app por ela, ficava com metade
+         * da tela vazia. O tamanho da view dividido pela densidade é o que a página realmente tem.
+         */
+        @JavascriptInterface
+        fun tamanhoCss(): String {
+            val web = painel.webs[conta] ?: return ""
+            val d = resources.displayMetrics.density
+            if (web.width <= 0 || web.height <= 0 || d <= 0f) return ""
+            return "${web.width / d},${web.height / d}"
+        }
+
         @JavascriptInterface
         fun sniperConfig(): String = sniper.configParaScript(conta)
 
