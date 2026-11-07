@@ -536,7 +536,7 @@ class MainActivity : Activity() {
 
     /** Núcleo (observa o WebSocket do jogo) + compra automática + sniper, numa ordem garantida. */
     private val scriptAutoCompra by lazy {
-        listOf("nucleo.js", "autocompra.js", "sniper.js")
+        listOf("nucleo.js", "autocompra.js", "sniper.js", "altura.js")
             .joinToString("\n;\n") { nome -> assets.open(nome).bufferedReader().use { it.readText() } }
     }
     private val sniper by lazy { Sniper(this, prefs, ::nomeConta) { painel.quantidade } }
