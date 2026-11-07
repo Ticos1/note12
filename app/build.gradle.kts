@@ -11,8 +11,8 @@ android {
         applicationId = "com.ticos.multiidle"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "2.6"
+        versionCode = 18
+        versionName = "2.7"
     }
 
     // Chave fixa no repositório: assim cada APK novo instala POR CIMA do anterior

@@ -1,6 +1,7 @@
 package com.ticos.multiidle
 
 import android.content.Context
+import android.graphics.Rect
 import android.view.View
 import android.webkit.WebView
 
@@ -17,6 +18,22 @@ class ContaWebView(ctx: Context) : WebView(ctx) {
 
     /** Liga/desliga o "fingir que está visível" (menu: Rodar com a tela apagada). */
     var manterAtiva = true
+
+    /**
+     * Quanto a página passa da tela (em px) por causa do zoom da conta: com zoom 0,67 a WebView
+     * tem 1/0,67 do tamanho da tela e é desenhada reduzida — ela está TODA à vista, mas o navegador
+     * interno mede a área visível da janela, vê a parte de baixo "fora da tela" e a trata como se
+     * estivesse coberta (o mesmo cálculo do teclado): encolhia a `visualViewport`, que o jogo usa
+     * como altura do app, e sobrava uma faixa vazia embaixo. O [Painel] informa esse excesso.
+     */
+    var excessoX = 0
+    var excessoY = 0
+
+    override fun getWindowVisibleDisplayFrame(outRect: Rect) {
+        super.getWindowVisibleDisplayFrame(outRect)
+        outRect.right += excessoX
+        outRect.bottom += excessoY
+    }
 
     override fun onWindowVisibilityChanged(visibility: Int) {
         super.onWindowVisibilityChanged(if (manterAtiva) View.VISIBLE else visibility)
